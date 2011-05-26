@@ -91,7 +91,6 @@ class RatpackServlet extends HttpServlet {
         stream.flush()
         stream.close()
         
-        // FIXME: use log4j or similar
         log "[   ${res.status}] ${verb} ${path}"
     }
 
