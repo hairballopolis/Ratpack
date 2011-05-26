@@ -9,7 +9,8 @@ class RatpackRunner {
 	RatpackApp app = new RatpackApp()
 	
 	void run(File scriptFile) {
-		GroovyScriptEngine gse = new GroovyScriptEngine(parentDirectoryName(scriptFile))
+		def root = parentDirectoryName(scriptFile)
+		GroovyScriptEngine gse = new GroovyScriptEngine(root)
 
 		Binding binding = new Binding()
 		binding.setVariable('get', app.get)
@@ -20,10 +21,11 @@ class RatpackRunner {
 
 		gse.run scriptFile.name, binding
 
+		app.set 'root', root
 		RatpackServlet.serve(app)
 	}
 	
 	private String parentDirectoryName(File scriptFile) {
-		scriptFile.canonicalPath.replace(scriptFile.name,'')
+		scriptFile.canonicalFile.parent
 	}
 }
