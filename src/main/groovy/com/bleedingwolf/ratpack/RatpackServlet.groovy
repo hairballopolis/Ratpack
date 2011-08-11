@@ -12,22 +12,30 @@ import org.mortbay.jetty.servlet.ServletHolder
 
 class RatpackServlet extends HttpServlet {
     def app = null
-	MimetypesFileTypeMap mimetypesFileTypeMap = new MimetypesFileTypeMap()
+
+    MimetypesFileTypeMap mimetypesFileTypeMap = new MimetypesFileTypeMap()
 
     void init() {
-    	if(app == null) {
-	    	def appScriptName = getServletConfig().getInitParameter("app-script-filename")
-			  def fullScriptPath = getServletContext().getRealPath("WEB-INF/lib/${appScriptName}")
+        if(app == null) {
+            def appScriptName = getServletConfig().getInitParameter("app-script-filename")
+            def fullScriptPath = getServletContext().getRealPath("WEB-INF/lib/${appScriptName}")
+            
+            log "Loading app from script '${appScriptName}'"
+            loadAppFromScript(fullScriptPath)
+        }
+        mimetypesFileTypeMap.addMimeTypes(this.class.getResourceAsStream('mime.types').text)
 
-	    	println "Loading app from script '${appScriptName}'"
-			loadAppFromScript(fullScriptPath)
-		}
-		mimetypesFileTypeMap.addMimeTypes(this.class.getResourceAsStream('mime.types').text)
     }
 
     private void loadAppFromScript(filename) {
-		  app = new RatpackApp()
-      app.prepareScriptForExecutionOnApp(filename)
+
+        ClassLoader parent = getClass().getClassLoader()
+        GroovyClassLoader loader = new GroovyClassLoader(parent)
+        Class groovyClass = loader.parseClass(new File(filename))
+        
+        GroovyObject groovyObject = (GroovyObject) groovyClass.newInstance();
+        app = groovyObject.run()
+
     }
 
     void service(HttpServletRequest req, HttpServletResponse res) {
@@ -52,8 +60,9 @@ class RatpackServlet extends HttpServlet {
             catch(RuntimeException ex) {
 
                 // FIXME: use log4j or similar
-                println "[ Error] Caught Exception: ${ex}"
 
+                log "[ Error] Caught Exception: ${ex}"
+                
                 res.status = HttpServletResponse.SC_INTERNAL_SERVER_ERROR
                 output = renderer.renderException(ex, req)
             }
@@ -83,27 +92,27 @@ class RatpackServlet extends HttpServlet {
         stream.write(output)
         stream.flush()
         stream.close()
+        
+        log "[   ${res.status}] ${verb} ${path}"
 
-        // FIXME: use log4j or similar
-        println "[   ${res.status}] ${verb} ${path}"
     }
 
     protected boolean staticFileExists(path) {
-		!path.endsWith('/') && staticFileFrom(path) != null
+        !path.endsWith('/') && staticFileFrom(path) != null
     }
 
     protected def serveStaticFile(response, path) {
-		URL url = staticFileFrom(path)
-		response.setHeader('Content-Type', mimetypesFileTypeMap.getContentType(url.toString()))
+        URL url = staticFileFrom(path)
+        response.setHeader('Content-Type', mimetypesFileTypeMap.getContentType(url.toString()))
         url.openStream().bytes
     }
 
     protected URL staticFileFrom(path) {
-        def publicDir = app.config.public
-        def fullPath = [publicDir, path].join(File.separator)
-        def file = new File(fullPath)
 
-        if(file.exists()) return file.toURI().toURL()
+        def publicDir = new File(app.config.root, app.config.public)
+        def file = new File(publicDir, path)
+
+        if(file.exists()) return file.toURL()
 
         try {
             return Thread.currentThread().contextClassLoader.getResource([publicDir, path].join('/'))
@@ -130,7 +139,10 @@ class RatpackServlet extends HttpServlet {
 
         def server = new Server(theApp.config.port)
         def root = new Context(server, "/", Context.SESSIONS)
-        root.addServlet(new ServletHolder(servlet), "/*")
+	def holder = new ServletHolder(servlet)
+	holder.setName("")
+        root.addServlet(holder, "/*")
+        
         server.start()
     }
 }
